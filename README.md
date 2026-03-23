@@ -27,7 +27,7 @@ Any agent that supports MCP can be the host and call the others:
 | **Claude Code** | Codex + Gemini | Native MCP support |
 | **Gemini CLI** | Claude + Codex | `gemini mcp` config |
 | **Codex CLI** | Claude + Gemini | `codex mcp` config |
-| **Any MCP client** | All of the above | Standard MCP protocol |
+| **Any MCP client** | Claude + Codex + Gemini | Standard MCP protocol |
 
 The architecture is **symmetric** — there's no privileged "main" model. Whoever you're talking to becomes the host, and the others become consultants.
 
@@ -47,17 +47,17 @@ The architecture is **symmetric** — there's no privileged "main" model. Whoeve
       │  (FastMCP Server) │
       ├──────┬───────────┤
       │      │           │
-      ▼      ▼           ▼
-   ┌────┐ ┌──────┐ ┌────────────┐
-   │Codex│ │Gemini│ │  History    │
-   │ CLI │ │ CLI  │ │  Store     │
-   └────┘ └──────┘ └────────────┘
-     ↑       ↑
+      ▼      ▼       ▼       ▼
+   ┌──────┐ ┌────┐ ┌──────┐ ┌─────────┐
+   │Claude│ │Codex│ │Gemini│ │ History  │
+   │ CLI  │ │ CLI │ │ CLI  │ │ Store   │
+   └──────┘ └────┘ └──────┘ └─────────┘
+     ↑        ↑       ↑
      Your subscriptions
      你的订阅账号
 ```
 
-1. The host agent calls MCP tools like `discuss_with_codex` or `group_discuss`
+1. The host agent calls MCP tools like `discuss_with_claude`, `discuss_with_codex`, or `group_discuss`
 2. The server spawns CLI subprocesses with conversation history as context
 3. Consultant agents respond with their full native tool capabilities (search, code execution, etc.)
 4. The host agent synthesizes all perspectives into a final answer
@@ -67,9 +67,9 @@ The architecture is **symmetric** — there's no privileged "main" model. Whoeve
 | Feature | Description |
 |---------|-------------|
 | **Host-agnostic** | Any MCP client can be the host — Claude, Gemini, Codex, or custom agents |
-| **Multi-LLM Discussion** | Consult Codex (OpenAI) and Gemini (Google) as discussion partners |
+| **Multi-LLM Discussion** | Consult Claude (Anthropic), Codex (OpenAI), and Gemini (Google) as discussion partners |
 | **Context Continuity** | Conversations are scoped by topic — context carries across multiple rounds |
-| **Parallel Consultation** | `group_discuss` queries both LLMs simultaneously |
+| **Parallel Consultation** | `group_discuss` queries all three LLMs simultaneously |
 | **Subscription-based** | Uses your existing CLI logins — no API keys, no extra cost |
 | **Full Tool Chains** | Consultant agents retain their native abilities (file I/O, search, code execution) |
 | **Persistent History** | Conversation history saved to disk, survives restarts |
@@ -77,9 +77,9 @@ The architecture is **symmetric** — there's no privileged "main" model. Whoeve
 | 功能 | 说明 |
 |------|------|
 | **主控无关** | 任何 MCP 客户端都能做主控 — Claude、Gemini、Codex 或自定义 Agent |
-| **多 LLM 讨论** | 将 Codex (OpenAI) 和 Gemini (Google) 作为讨论伙伴 |
+| **多 LLM 讨论** | 将 Claude (Anthropic)、Codex (OpenAI) 和 Gemini (Google) 作为讨论伙伴 |
 | **上下文连续** | 按主题(topic)维护对话，多轮讨论保持上下文 |
-| **并行咨询** | `group_discuss` 同时向两个 LLM 提问 |
+| **并行咨询** | `group_discuss` 同时向三个 LLM 提问 |
 | **基于订阅** | 使用你已有的 CLI 登录凭证 — 无需 API Key，无额外费用 |
 | **完整工具链** | 顾问 Agent 保留原生能力（文件读写、搜索、代码执行） |
 | **持久化历史** | 对话历史保存到磁盘，重启不丢失 |
@@ -89,6 +89,7 @@ The architecture is **symmetric** — there's no privileged "main" model. Whoeve
 - **Python** >= 3.13
 - **[uv](https://docs.astral.sh/uv/)** — Python package manager
 - At least one consultant CLI installed and logged in:
+  - **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** — `npm install -g @anthropic-ai/claude-code`
   - **[Codex CLI](https://github.com/openai/codex)** — `npm install -g @openai/codex`
   - **[Gemini CLI](https://github.com/google/gemini-cli)** — `npm install -g @google/gemini-cli`
 
@@ -138,6 +139,17 @@ Restart your agent and the tools will be available.
 
 ## MCP Tools / 工具列表
 
+### `discuss_with_claude`
+
+Ask Claude (Anthropic Sonnet) a question with topic-scoped context.
+
+向 Claude (Anthropic Sonnet) 提问，按主题维护上下文。
+
+```
+message: "Analyze the trade-offs of this caching strategy"
+topic: "caching-design"
+```
+
 ### `discuss_with_codex`
 
 Ask Codex (OpenAI o3) a question with topic-scoped context.
@@ -162,9 +174,9 @@ topic: "db-review"
 
 ### `group_discuss`
 
-Query both Codex and Gemini in parallel, get both perspectives.
+Query Claude, Codex, and Gemini in parallel, get all perspectives.
 
-并行向 Codex 和 Gemini 提问，获取双方观点。
+并行向 Claude、Codex 和 Gemini 提问，获取三方观点。
 
 ```
 message: "Should we use GraphQL or REST for this API?"
@@ -183,9 +195,10 @@ Clear conversation history for a topic. / 清除某个主题的对话历史。
 
 ```
 mcp-multi-llm/
-├── server.py              # FastMCP server with 5 tools
+├── server.py              # FastMCP server with 6 tools
 ├── sessions/
 │   ├── base.py            # Base class: subprocess mgmt, timeout, context
+│   ├── claude_session.py  # Claude CLI provider (claude -p)
 │   ├── codex_session.py   # Codex CLI provider (codex exec)
 │   └── gemini_session.py  # Gemini CLI provider (gemini -p)
 ├── history/
