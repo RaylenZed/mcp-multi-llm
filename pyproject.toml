@@ -1,0 +1,18 @@
+[project]
+name = "mcp-multi-llm"
+version = "0.1.0"
+description = "MCP server that lets Claude Code discuss with Codex and Gemini CLI using your subscriptions"
+readme = "README.md"
+requires-python = ">=3.13"
+license = "MIT"
+authors = [
+    { name = "raylenzed" },
+]
+keywords = ["mcp", "llm", "codex", "gemini", "claude", "multi-agent"]
+dependencies = [
+    "fastmcp>=3.1.1",
+]
+
+[project.urls]
+Homepage = "https://github.com/raylenzed/mcp-multi-llm"
+Repository = "https://github.com/raylenzed/mcp-multi-llm"
