@@ -12,14 +12,14 @@ from sessions.gemini_session import GeminiSession
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Initialize
 mcp = FastMCP(
     "multi-llm",
     instructions=(
         "Multi-LLM discussion server. Use these tools to consult with "
         "Claude (Anthropic), Codex (OpenAI), and Gemini (Google) for second opinions, "
         "code review, architecture discussions, and collaborative problem-solving. "
-        "Each conversation is scoped by a 'topic' to maintain context continuity."
+        "Each conversation is scoped by a 'topic' to maintain context continuity. "
+        "Use list_available_providers first to see which consultants are installed."
     ),
 )
 
@@ -27,6 +27,22 @@ history_store = HistoryStore()
 claude = ClaudeSession(history_store)
 codex = CodexSession(history_store)
 gemini = GeminiSession(history_store)
+
+_all_providers = {"claude": claude, "codex": codex, "gemini": gemini}
+
+
+@mcp.tool()
+async def list_available_providers() -> str:
+    """List which LLM CLI providers are installed and available for consultation."""
+    available = [name for name, s in _all_providers.items() if s.available]
+    unavailable = [name for name, s in _all_providers.items() if not s.available]
+    lines = []
+    if available:
+        lines.append("Available: " + ", ".join(available))
+    if unavailable:
+        lines.append("Not installed: " + ", ".join(unavailable) +
+                     " (install their CLI and restart the server)")
+    return "\n".join(lines) or "No providers available."
 
 
 @mcp.tool()
@@ -42,7 +58,7 @@ async def discuss_with_claude(message: str, topic: str = "general") -> str:
 
 @mcp.tool()
 async def discuss_with_codex(message: str, topic: str = "general") -> str:
-    """Discuss with Codex (OpenAI o3). Maintains conversation context per topic.
+    """Discuss with Codex (OpenAI). Maintains conversation context per topic.
 
     Args:
         message: What to ask or discuss with Codex.
@@ -64,27 +80,26 @@ async def discuss_with_gemini(message: str, topic: str = "general") -> str:
 
 @mcp.tool()
 async def group_discuss(message: str, topic: str = "general") -> str:
-    """Ask Claude, Codex, and Gemini the same question in parallel, get all perspectives.
+    """Ask all available LLMs the same question in parallel. Skips providers not installed.
 
     Args:
-        message: The question or topic to discuss with all LLMs.
+        message: The question or topic to discuss with all available LLMs.
         topic: Conversation topic for context continuity.
     """
-    claude_task = claude.send(message, topic)
-    codex_task = codex.send(message, topic)
-    gemini_task = gemini.send(message, topic)
+    active = {name: s for name, s in _all_providers.items() if s.available}
+    if not active:
+        return "No providers available. Install at least one CLI (claude, codex, gemini)."
 
-    results = await asyncio.gather(claude_task, codex_task, gemini_task, return_exceptions=True)
+    tasks = {name: s.send(message, topic) for name, s in active.items()}
+    results = await asyncio.gather(*tasks.values(), return_exceptions=True)
 
-    claude_resp = results[0] if not isinstance(results[0], Exception) else f"Error: {results[0]}"
-    codex_resp = results[1] if not isinstance(results[1], Exception) else f"Error: {results[1]}"
-    gemini_resp = results[2] if not isinstance(results[2], Exception) else f"Error: {results[2]}"
+    sections = []
+    for name, result in zip(tasks.keys(), results):
+        label = {"claude": "Claude (Anthropic)", "codex": "Codex (OpenAI)", "gemini": "Gemini (Google)"}.get(name, name)
+        resp = result if not isinstance(result, Exception) else f"Error: {result}"
+        sections.append(f"=== {label} ===\n{resp}")
 
-    return (
-        f"=== Claude (Anthropic) ===\n{claude_resp}\n\n"
-        f"=== Codex (OpenAI) ===\n{codex_resp}\n\n"
-        f"=== Gemini (Google) ===\n{gemini_resp}"
-    )
+    return "\n\n".join(sections)
 
 
 @mcp.tool()
@@ -104,7 +119,7 @@ async def clear_discussion(topic: str, provider: str | None = None) -> str:
         topic: The topic to clear.
         provider: Optional - "claude", "codex", "gemini", or None for all.
     """
-    providers = [provider] if provider else ["claude", "codex", "gemini"]
+    providers = [provider] if provider else list(_all_providers.keys())
     for p in providers:
         history_store.clear_topic(p, topic)
     return f"Cleared discussion '{topic}' for {', '.join(providers)}."

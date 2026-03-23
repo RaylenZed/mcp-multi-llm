@@ -16,6 +16,7 @@ class CLISession(ABC):
 
     def __init__(self, history_store: HistoryStore):
         self.history_store = history_store
+        self.available = True  # set to False if CLI not found
 
     @abstractmethod
     def _build_command(self, message: str, history: TopicHistory) -> list[str]:
@@ -27,15 +28,19 @@ class CLISession(ABC):
         """Parse CLI output into clean response text."""
         ...
 
-    def _get_cli_path(self, name: str) -> str:
-        """Find the CLI executable path."""
+    def _get_cli_path(self, name: str) -> str | None:
+        """Find the CLI executable path. Returns None if not found (no crash)."""
         path = shutil.which(name)
         if path is None:
-            raise RuntimeError(f"{name} CLI not found in PATH. Please install it first.")
+            self.available = False
+            logger.warning(f"[{self.provider_name}] CLI '{name}' not found in PATH — provider disabled.")
         return path
 
     async def send(self, message: str, topic: str, timeout: int = 300) -> str:
         """Send a message and get a response, maintaining conversation context."""
+        if not self.available:
+            return f"[{self.provider_name} unavailable — CLI not installed or not in PATH]"
+
         history = self.history_store.get_or_create(self.provider_name, topic)
         history.add("user", message)
 
@@ -59,7 +64,6 @@ class CLISession(ABC):
                 if stderr.strip():
                     error_msg += f"\nstderr: {stderr.strip()}"
                 logger.error(error_msg)
-                # Still try to parse - some CLIs write to stderr for progress
                 if stdout.strip():
                     response = self._parse_output(stdout, stderr)
                 else:
