@@ -8,7 +8,7 @@ from history.store import HistoryStore, TopicHistory
 class ClaudeSession(CLISession):
     provider_name = "claude"
 
-    def __init__(self, history_store: HistoryStore, model: str = "sonnet"):
+    def __init__(self, history_store: HistoryStore, model: str = "claude-opus-4-6"):
         super().__init__(history_store)
         self.model = model
         self.cli_path = self._get_cli_path("claude")

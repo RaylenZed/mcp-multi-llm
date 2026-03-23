@@ -9,7 +9,7 @@ from history.store import HistoryStore, TopicHistory
 class GeminiSession(CLISession):
     provider_name = "gemini"
 
-    def __init__(self, history_store: HistoryStore, model: str | None = None, yolo: bool = True):
+    def __init__(self, history_store: HistoryStore, model: str = "gemini-2.5-pro", yolo: bool = True):
         super().__init__(history_store)
         self.model = model
         self.yolo = yolo
