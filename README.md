@@ -141,9 +141,9 @@ Restart your agent and the tools will be available.
 
 ### `discuss_with_claude`
 
-Ask Claude (Anthropic Sonnet) a question with topic-scoped context.
+Ask Claude (Anthropic Opus) a question with topic-scoped context.
 
-向 Claude (Anthropic Sonnet) 提问，按主题维护上下文。
+向 Claude (Anthropic Opus) 提问，按主题维护上下文。
 
 ```
 message: "Analyze the trade-offs of this caching strategy"
@@ -152,9 +152,9 @@ topic: "caching-design"
 
 ### `discuss_with_codex`
 
-Ask Codex (OpenAI o3) a question with topic-scoped context.
+Ask Codex (OpenAI) a question with topic-scoped context.
 
-向 Codex (OpenAI o3) 提问，按主题维护上下文。
+向 Codex (OpenAI) 提问，按主题维护上下文。
 
 ```
 message: "What's the best way to handle auth in this architecture?"
@@ -190,6 +190,21 @@ List all active discussion topics. / 列出所有进行中的讨论主题。
 ### `clear_discussion`
 
 Clear conversation history for a topic. / 清除某个主题的对话历史。
+
+## Changing Models / 修改模型
+
+Each provider's default model can be changed in one place:
+
+每个 provider 的默认模型在以下位置修改：
+
+| Provider | 文件 | 修改位置 |
+|----------|------|---------|
+| **Claude** | `sessions/claude_session.py` line 11 | `model: str = "claude-opus-4-6"` |
+| **Gemini** | `sessions/gemini_session.py` line 12 | `model: str = "gemini-2.5-pro"` |
+| **Codex** | `~/.codex/config.toml` | `model = "gpt-5.4"` |
+
+> Codex CLI 的模型由全局配置文件控制，不在本项目内。
+> 当 Codex 使用 ChatGPT 订阅账号时，**不支持通过 `-m` 参数指定模型**，必须通过 `~/.codex/config.toml` 设置，或留空让 Codex 自动选择当前最高配置。
 
 ## Architecture / 架构
 
