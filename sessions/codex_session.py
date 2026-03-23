@@ -8,18 +8,16 @@ from history.store import HistoryStore, TopicHistory
 class CodexSession(CLISession):
     provider_name = "codex"
 
-    def __init__(self, history_store: HistoryStore, model: str = "o3"):
+    def __init__(self, history_store: HistoryStore, model: str | None = None):
         super().__init__(history_store)
-        self.model = model
+        self.model = model  # None = let Codex pick default (works for ChatGPT subscribers)
         self.cli_path = self._get_cli_path("codex")
 
     def _build_prompt_with_context(self, message: str, history: TopicHistory) -> str:
         """Build a prompt that includes conversation history for context continuity."""
         if len(history.messages) <= 1:
-            # First message, no history needed
             return message
 
-        # Include recent history as context
         context = history.format_for_prompt(max_messages=10)
         return (
             f"Previous conversation context:\n{context}\n\n"
@@ -28,13 +26,11 @@ class CodexSession(CLISession):
 
     def _build_command(self, message: str, history: TopicHistory) -> list[str]:
         prompt = self._build_prompt_with_context(message, history)
-        return [
-            self.cli_path, "exec",
-            "--skip-git-repo-check",
-            "--ephemeral",
-            "-m", self.model,
-            prompt,
-        ]
+        cmd = [self.cli_path, "exec", "--skip-git-repo-check", "--ephemeral"]
+        if self.model:
+            cmd.extend(["-m", self.model])
+        cmd.append(prompt)
+        return cmd
 
     def _parse_output(self, stdout: str, stderr: str) -> str:
         """Parse Codex output, stripping ANSI codes and progress noise."""
