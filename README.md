@@ -1,88 +1,110 @@
 # mcp-multi-llm
 
-**Let Claude Code discuss with Codex and Gemini — using your existing subscriptions.**
+**Any AI agent as the host, any others as consultants — using your existing subscriptions.**
 
-**让 Claude Code 和 Codex、Gemini 展开讨论 — 使用你已有的订阅账号。**
+**任意 AI Agent 做主控，任意其他 Agent 做顾问 — 使用你已有的订阅账号。**
 
 ---
 
 ## The Idea / 起源
 
-When using Claude Code to solve complex problems, wouldn't it be great to get second opinions from other AI agents — in real time, within the same workflow?
+Modern AI coding agents (Claude Code, Codex CLI, Gemini CLI) are powerful individually. But what if they could **discuss with each other**?
 
-在用 Claude Code 解决复杂问题时，如果能在同一个工作流中实时获取其他 AI 的观点，岂不是更好？
+现代 AI 编程 Agent（Claude Code、Codex CLI、Gemini CLI）各自都很强大。但如果它们能**互相讨论**呢？
 
-This MCP server makes it happen. Claude can now consult **OpenAI Codex CLI** and **Google Gemini CLI** as discussion partners — with full conversation context, tool capabilities retained, and **zero API keys needed** (uses your CLI subscriptions).
+This MCP server enables **any MCP-compatible agent** to consult the others as discussion partners — with full conversation context, native tool capabilities retained, and **zero API keys needed** (uses your CLI subscriptions).
 
-这个 MCP Server 让这一切成为现实。Claude 现在可以把 **OpenAI Codex CLI** 和 **Google Gemini CLI** 作为讨论伙伴 — 保留完整的对话上下文和工具能力，**无需 API Key**（使用你的 CLI 订阅账号）。
+这个 MCP Server 让**任何支持 MCP 的 Agent** 都能将其他 Agent 作为讨论伙伴 — 保留完整的对话上下文和工具能力，**无需 API Key**（使用你的 CLI 订阅账号）。
+
+### Who can be the host? / 谁可以做主控？
+
+Any agent that supports MCP can be the host and call the others:
+
+任何支持 MCP 的 Agent 都可以做主控，调用其他 Agent：
+
+| Host Agent / 主控 | Consults / 咨询 | How / 方式 |
+|---|---|---|
+| **Claude Code** | Codex + Gemini | Native MCP support |
+| **Gemini CLI** | Claude + Codex | `gemini mcp` config |
+| **Codex CLI** | Claude + Gemini | `codex mcp` config |
+| **Any MCP client** | All of the above | Standard MCP protocol |
+
+The architecture is **symmetric** — there's no privileged "main" model. Whoever you're talking to becomes the host, and the others become consultants.
+
+架构是**对称的** — 没有特权的"主模型"。你在跟谁对话，谁就是主控，其他的就是顾问。
 
 ## How It Works / 工作原理
 
 ```
-┌─────────────┐
-│ Claude Code  │
-│  (You ↔ AI)  │
-└──────┬───────┘
-       │ MCP Protocol
-       ▼
-┌──────────────────┐
-│  mcp-multi-llm   │
-│  (FastMCP Server) │
-├──────┬───────────┤
-│      │           │
-▼      ▼           ▼
-┌────┐ ┌──────┐ ┌────────────┐
-│Codex│ │Gemini│ │  History    │
-│ CLI │ │ CLI  │ │  Store     │
-└────┘ └──────┘ └────────────┘
-  ↑       ↑
-  Your subscriptions
-  你的订阅账号
+┌──────────────────────────────────────┐
+│  Any MCP-compatible Host Agent       │
+│  (Claude Code / Gemini / Codex / …)  │
+└──────────────┬───────────────────────┘
+               │ MCP Protocol (stdio)
+               ▼
+      ┌──────────────────┐
+      │  mcp-multi-llm   │
+      │  (FastMCP Server) │
+      ├──────┬───────────┤
+      │      │           │
+      ▼      ▼           ▼
+   ┌────┐ ┌──────┐ ┌────────────┐
+   │Codex│ │Gemini│ │  History    │
+   │ CLI │ │ CLI  │ │  Store     │
+   └────┘ └──────┘ └────────────┘
+     ↑       ↑
+     Your subscriptions
+     你的订阅账号
 ```
 
-1. Claude Code calls MCP tools like `discuss_with_codex` or `group_discuss`
+1. The host agent calls MCP tools like `discuss_with_codex` or `group_discuss`
 2. The server spawns CLI subprocesses with conversation history as context
-3. Codex/Gemini respond with their full native tool capabilities (search, code execution, etc.)
-4. Claude synthesizes all perspectives into a final answer
+3. Consultant agents respond with their full native tool capabilities (search, code execution, etc.)
+4. The host agent synthesizes all perspectives into a final answer
 
 ## Features / 功能
 
 | Feature | Description |
 |---------|-------------|
-| **Multi-LLM Discussion** | Consult Codex (OpenAI) and Gemini (Google) from within Claude Code |
+| **Host-agnostic** | Any MCP client can be the host — Claude, Gemini, Codex, or custom agents |
+| **Multi-LLM Discussion** | Consult Codex (OpenAI) and Gemini (Google) as discussion partners |
 | **Context Continuity** | Conversations are scoped by topic — context carries across multiple rounds |
 | **Parallel Consultation** | `group_discuss` queries both LLMs simultaneously |
 | **Subscription-based** | Uses your existing CLI logins — no API keys, no extra cost |
-| **Full Tool Chains** | Codex and Gemini retain their native abilities (file I/O, search, code execution) |
+| **Full Tool Chains** | Consultant agents retain their native abilities (file I/O, search, code execution) |
 | **Persistent History** | Conversation history saved to disk, survives restarts |
 
 | 功能 | 说明 |
 |------|------|
-| **多 LLM 讨论** | 在 Claude Code 中咨询 Codex (OpenAI) 和 Gemini (Google) |
+| **主控无关** | 任何 MCP 客户端都能做主控 — Claude、Gemini、Codex 或自定义 Agent |
+| **多 LLM 讨论** | 将 Codex (OpenAI) 和 Gemini (Google) 作为讨论伙伴 |
 | **上下文连续** | 按主题(topic)维护对话，多轮讨论保持上下文 |
 | **并行咨询** | `group_discuss` 同时向两个 LLM 提问 |
 | **基于订阅** | 使用你已有的 CLI 登录凭证 — 无需 API Key，无额外费用 |
-| **完整工具链** | Codex 和 Gemini 保留原生能力（文件读写、搜索、代码执行） |
+| **完整工具链** | 顾问 Agent 保留原生能力（文件读写、搜索、代码执行） |
 | **持久化历史** | 对话历史保存到磁盘，重启不丢失 |
 
 ## Prerequisites / 前提条件
 
 - **Python** >= 3.13
 - **[uv](https://docs.astral.sh/uv/)** — Python package manager
-- **[Codex CLI](https://github.com/openai/codex)** — `npm install -g @openai/codex` (logged in)
-- **[Gemini CLI](https://github.com/google/gemini-cli)** — `npm install -g @google/gemini-cli` (logged in)
+- At least one consultant CLI installed and logged in:
+  - **[Codex CLI](https://github.com/openai/codex)** — `npm install -g @openai/codex`
+  - **[Gemini CLI](https://github.com/google/gemini-cli)** — `npm install -g @google/gemini-cli`
 
 ## Installation / 安装
 
 ```bash
-git clone https://github.com/raylenzed/mcp-multi-llm.git
+git clone https://github.com/RaylenZed/mcp-multi-llm.git
 cd mcp-multi-llm
 uv sync
 ```
 
-### Configure in Claude Code / 在 Claude Code 中配置
+## Configuration / 配置
 
-Add to your `~/.claude.json` under `mcpServers`:
+### As Claude Code host / Claude Code 做主控
+
+Add to `~/.claude.json` under `mcpServers`:
 
 在 `~/.claude.json` 的 `mcpServers` 中添加：
 
@@ -98,9 +120,21 @@ Add to your `~/.claude.json` under `mcpServers`:
 }
 ```
 
-Restart Claude Code and the tools will be available.
+### As Gemini CLI host / Gemini CLI 做主控
 
-重启 Claude Code 后即可使用。
+```bash
+gemini mcp add multi-llm -- uv run --directory /path/to/mcp-multi-llm python server.py
+```
+
+### As Codex CLI host / Codex CLI 做主控
+
+```bash
+codex mcp add multi-llm -- uv run --directory /path/to/mcp-multi-llm python server.py
+```
+
+Restart your agent and the tools will be available.
+
+重启你的 Agent 后即可使用。
 
 ## MCP Tools / 工具列表
 
@@ -167,6 +201,12 @@ mcp-multi-llm/
 | **Tools** | Full native tool chains (search, file I/O, code exec) | Bare model, no tools |
 | **Auth** | Your existing login | Manage API keys |
 | **Capability** | Agent-level (reads files, runs code) | Chat-level (text in, text out) |
+
+### Adding more agents / 添加更多 Agent
+
+The provider pattern is simple to extend. To add a new CLI agent, create a new session class in `sessions/` that implements `_build_command()` and `_parse_output()`. Any CLI tool that accepts a prompt and returns text can be integrated.
+
+Provider 模式易于扩展。要添加新的 CLI Agent，只需在 `sessions/` 中创建新的 session 类，实现 `_build_command()` 和 `_parse_output()`。任何接受提示并返回文本的 CLI 工具都可以集成。
 
 ## License / 许可
 
