@@ -45,6 +45,10 @@ def load_custom_providers(path: Path | None = None) -> list[ProviderConfig]:
 
     providers = []
     for i, entry in enumerate(raw):
+        if not isinstance(entry, dict):
+            logger.warning(f"[provider_config] Entry {i}: not a JSON object — skipping")
+            continue
+
         name = entry.get("name", "")
         base_url = entry.get("base_url", "")
         model = entry.get("model", "")

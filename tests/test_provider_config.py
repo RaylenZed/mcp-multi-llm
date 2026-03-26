@@ -70,3 +70,18 @@ def test_load_multiple_providers(tmp_path):
     providers = load_custom_providers(cfg_path)
     assert len(providers) == 2
     assert {p.name for p in providers} == {"deepseek", "qianwen"}
+
+
+def test_non_dict_entry_is_skipped(tmp_path):
+    """Non-dict entries in the array are skipped without crashing."""
+    cfg_path = write_config(tmp_path, ["not-a-dict", 42, None])
+    providers = load_custom_providers(cfg_path)
+    assert providers == []
+
+
+def test_malformed_json_returns_empty(tmp_path):
+    """Malformed JSON file returns empty list."""
+    p = tmp_path / "custom_providers.json"
+    p.write_text("this is not json")
+    providers = load_custom_providers(p)
+    assert providers == []
