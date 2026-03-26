@@ -67,10 +67,11 @@ The architecture is **symmetric** — there's no privileged "main" model. Whoeve
 | Feature | Description |
 |---------|-------------|
 | **Host-agnostic** | Any MCP client can be the host — Claude, Gemini, Codex, or custom agents |
-| **Multi-LLM Discussion** | Consult Claude (Anthropic), Codex (OpenAI), and Gemini (Google) as discussion partners |
+| **Multi-LLM Discussion** | Consult Claude (Anthropic), Codex (OpenAI), Gemini (Google) as discussion partners |
+| **Custom Providers** | Add any OpenAI-compatible model (DeepSeek, Qianwen, etc.) via a config file — each gets its own MCP tool |
 | **Context Continuity** | Conversations are scoped by topic — context carries across multiple rounds |
-| **Parallel Consultation** | `group_discuss` queries all three LLMs simultaneously |
-| **Subscription-based** | Uses your existing CLI logins — no API keys, no extra cost |
+| **Parallel Consultation** | `group_discuss` queries all available LLMs simultaneously |
+| **Subscription-based** | Built-in providers use your existing CLI logins — no API keys needed |
 | **Full Tool Chains** | Consultant agents retain their native abilities (file I/O, search, code execution) |
 | **Persistent History** | Conversation history saved to disk, survives restarts |
 
@@ -78,9 +79,10 @@ The architecture is **symmetric** — there's no privileged "main" model. Whoeve
 |------|------|
 | **主控无关** | 任何 MCP 客户端都能做主控 — Claude、Gemini、Codex 或自定义 Agent |
 | **多 LLM 讨论** | 将 Claude (Anthropic)、Codex (OpenAI) 和 Gemini (Google) 作为讨论伙伴 |
+| **自定义模型** | 通过配置文件添加任意 OpenAI 兼容模型（DeepSeek、千问等），每个模型自动获得独立 MCP 工具 |
 | **上下文连续** | 按主题(topic)维护对话，多轮讨论保持上下文 |
-| **并行咨询** | `group_discuss` 同时向三个 LLM 提问 |
-| **基于订阅** | 使用你已有的 CLI 登录凭证 — 无需 API Key，无额外费用 |
+| **并行咨询** | `group_discuss` 同时向所有可用模型提问 |
+| **基于订阅** | 内置 provider 使用已有的 CLI 登录凭证 — 无需 API Key |
 | **完整工具链** | 顾问 Agent 保留原生能力（文件读写、搜索、代码执行） |
 | **持久化历史** | 对话历史保存到磁盘，重启不丢失 |
 
@@ -315,6 +317,56 @@ List all active discussion topics. / 列出所有进行中的讨论主题。
 
 Clear conversation history for a topic. / 清除某个主题的对话历史。
 
+## Custom Providers / 自定义模型
+
+支持通过配置文件接入任意 **OpenAI 兼容 API** 的模型（DeepSeek、阿里千问、Moonshot、零一万物等）。
+
+### 配置文件
+
+创建 `~/.mcp-multi-llm/custom_providers.json`：
+
+```json
+[
+  {
+    "name": "deepseek",
+    "base_url": "https://api.deepseek.com/v1",
+    "model": "deepseek-chat",
+    "api_key": "sk-你的key"
+  },
+  {
+    "name": "qianwen",
+    "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "model": "qwen-plus",
+    "api_key": "sk-你的key"
+  }
+]
+```
+
+**重启 MCP 服务**后，每个模型会自动注册为独立工具：`discuss_with_deepseek`、`discuss_with_qianwen`，并参与 `group_discuss` 和 `list_available_providers`。
+
+### 字段说明
+
+| 字段 | 必填 | 说明 |
+|------|------|------|
+| `name` | ✅ | 工具名称，只能用字母/数字/下划线，不能是 `claude`/`codex`/`gemini` |
+| `base_url` | ✅ | API 基础地址（到 `/v1` 为止） |
+| `model` | ✅ | 模型名称（如 `deepseek-chat`、`qwen-plus`） |
+| `api_key` | ✅ | API Key |
+
+### 常用 provider 参考
+
+| 模型 | base_url | 常用 model |
+|------|----------|-----------|
+| DeepSeek | `https://api.deepseek.com/v1` | `deepseek-chat` |
+| 阿里千问 | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `qwen-plus`、`qwen-max` |
+| Moonshot | `https://api.moonshot.cn/v1` | `moonshot-v1-8k` |
+| 零一万物 | `https://api.lingyiwanwu.com/v1` | `yi-large` |
+| Groq | `https://api.groq.com/openai/v1` | `llama-3.3-70b-versatile` |
+
+> 任何支持 `/chat/completions` 接口（OpenAI 兼容格式）的服务均可接入。
+
+---
+
 ## Changing Models / 修改模型
 
 Each provider's default model can be changed in one place:
@@ -334,14 +386,17 @@ Each provider's default model can be changed in one place:
 
 ```
 mcp-multi-llm/
-├── server.py              # FastMCP server with 6 tools
+├── server.py                    # FastMCP server, dynamic tool registration
 ├── sessions/
-│   ├── base.py            # Base class: subprocess mgmt, timeout, context
-│   ├── claude_session.py  # Claude CLI provider (claude -p)
-│   ├── codex_session.py   # Codex CLI provider (codex exec)
-│   └── gemini_session.py  # Gemini CLI provider (gemini -p)
+│   ├── base.py                  # BaseSession (abstract) + CLISession (subprocess)
+│   ├── api_session.py           # APISession (httpx, for OpenAI-compatible APIs)
+│   ├── claude_session.py        # Claude CLI provider (claude -p)
+│   ├── codex_session.py         # Codex CLI provider (codex exec)
+│   ├── gemini_session.py        # Gemini CLI provider (gemini -p)
+│   ├── openai_compat_session.py # Custom providers via /chat/completions
+│   └── provider_config.py       # Load ~/.mcp-multi-llm/custom_providers.json
 ├── history/
-│   └── store.py           # Conversation history persistence
+│   └── store.py                 # Conversation history persistence
 └── pyproject.toml
 ```
 
@@ -356,9 +411,9 @@ mcp-multi-llm/
 
 ### Adding more agents / 添加更多 Agent
 
-The provider pattern is simple to extend. To add a new CLI agent, create a new session class in `sessions/` that implements `_build_command()` and `_parse_output()`. Any CLI tool that accepts a prompt and returns text can be integrated.
+**方式一：API 模型（推荐）** — 编辑 `~/.mcp-multi-llm/custom_providers.json`，重启即可。无需改代码，详见 [Custom Providers](#custom-providers--自定义模型) 一节。
 
-Provider 模式易于扩展。要添加新的 CLI Agent，只需在 `sessions/` 中创建新的 session 类，实现 `_build_command()` 和 `_parse_output()`。任何接受提示并返回文本的 CLI 工具都可以集成。
+**方式二：CLI 模型** — 在 `sessions/` 中创建新 session 类，继承 `CLISession`，实现 `_build_command()` 和 `_parse_output()`，然后在 `server.py` 中注册。适用于有 CLI 工具的模型。
 
 ## License / 许可
 
