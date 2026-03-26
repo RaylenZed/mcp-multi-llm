@@ -1,8 +1,6 @@
 """Test that CLISession passes the full environment to subprocesses."""
 import os
-import asyncio
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
 from history.store import HistoryStore
 from sessions.base import CLISession
 
