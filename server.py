@@ -8,6 +8,8 @@ from history.store import HistoryStore
 from sessions.claude_session import ClaudeSession
 from sessions.codex_session import CodexSession
 from sessions.gemini_session import GeminiSession
+from sessions.openai_compat_session import OpenAICompatSession
+from sessions.provider_config import load_custom_providers
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -16,10 +18,10 @@ mcp = FastMCP(
     "multi-llm",
     instructions=(
         "Multi-LLM discussion server. Use these tools to consult with "
-        "Claude (Anthropic), Codex (OpenAI), and Gemini (Google) for second opinions, "
-        "code review, architecture discussions, and collaborative problem-solving. "
-        "Each conversation is scoped by a 'topic' to maintain context continuity. "
-        "Use list_available_providers first to see which consultants are installed."
+        "Claude (Anthropic), Codex (OpenAI), Gemini (Google), and any custom providers "
+        "for second opinions, code review, architecture discussions, and collaborative "
+        "problem-solving. Each conversation is scoped by a 'topic' to maintain context "
+        "continuity. Use list_available_providers first to see which consultants are available."
     ),
 )
 
@@ -28,12 +30,45 @@ claude = ClaudeSession(history_store)
 codex = CodexSession(history_store)
 gemini = GeminiSession(history_store)
 
-_all_providers = {"claude": claude, "codex": codex, "gemini": gemini}
+_all_providers: dict = {"claude": claude, "codex": codex, "gemini": gemini}
 
+
+# --- Load custom providers from config ---
+def _make_discuss_tool(session: OpenAICompatSession):
+    """Create a typed discuss tool function for a custom provider."""
+    provider_name = session.provider_name
+
+    async def discuss(message: str, topic: str = "general") -> str:
+        return await session.send(message, topic)
+
+    discuss.__name__ = f"discuss_with_{provider_name}"
+    discuss.__doc__ = (
+        f"Discuss with {provider_name}. Maintains conversation context per topic.\n\n"
+        f"Args:\n"
+        f"    message: What to ask or discuss.\n"
+        f"    topic: Conversation topic for context continuity (e.g. 'auth-refactor', 'api-design')."
+    )
+    return discuss
+
+
+for _cfg in load_custom_providers():
+    _session = OpenAICompatSession(
+        history_store=history_store,
+        name=_cfg.name,
+        base_url=_cfg.base_url,
+        model=_cfg.model,
+        api_key=_cfg.api_key,
+    )
+    _all_providers[_cfg.name] = _session
+    mcp.tool()(_make_discuss_tool(_session))
+    logger.info(f"[server] Registered custom provider: {_cfg.name}")
+
+
+# --- Built-in tools ---
 
 @mcp.tool()
 async def list_available_providers() -> str:
-    """List which LLM CLI providers are installed and available for consultation."""
+    """List which LLM providers are available for consultation."""
     available = [name for name, s in _all_providers.items() if s.available]
     unavailable = [name for name, s in _all_providers.items() if not s.available]
     lines = []
@@ -88,16 +123,15 @@ async def group_discuss(message: str, topic: str = "general") -> str:
     """
     active = {name: s for name, s in _all_providers.items() if s.available}
     if not active:
-        return "No providers available. Install at least one CLI (claude, codex, gemini)."
+        return "No providers available. Install at least one CLI (claude, codex, gemini) or add custom providers."
 
     tasks = {name: s.send(message, topic) for name, s in active.items()}
     results = await asyncio.gather(*tasks.values(), return_exceptions=True)
 
     sections = []
     for name, result in zip(tasks.keys(), results):
-        label = {"claude": "Claude (Anthropic)", "codex": "Codex (OpenAI)", "gemini": "Gemini (Google)"}.get(name, name)
         resp = result if not isinstance(result, Exception) else f"Error: {result}"
-        sections.append(f"=== {label} ===\n{resp}")
+        sections.append(f"=== {name} ===\n{resp}")
 
     return "\n\n".join(sections)
 
@@ -117,7 +151,7 @@ async def clear_discussion(topic: str, provider: str | None = None) -> str:
 
     Args:
         topic: The topic to clear.
-        provider: Optional - "claude", "codex", "gemini", or None for all.
+        provider: Optional — provider name, or None to clear for all providers.
     """
     providers = [provider] if provider else list(_all_providers.keys())
     for p in providers:
