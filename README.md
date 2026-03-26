@@ -210,26 +210,27 @@ For providers that implement the Anthropic `/v1/messages` API format:
 
 ## Switching Claude/Codex to API mode / Claude/Codex 切换为 API 模式
 
-By default Claude and Codex use their CLI tools. To switch either to direct API access, create `~/.mcp-multi-llm/settings.json`:
-
-Claude 和 Codex 默认走 CLI。如果想切换为直接 API 模式，创建 `~/.mcp-multi-llm/settings.json`：
+Claude 和 Codex 默认走 CLI。如果想切换为直接 API 模式，直接在 `custom_providers.json` 里加上对应条目即可，和其他模型完全一样：
 
 ```json
-{
-  "claude": {
-    "mode": "api",
-    "model": "claude-opus-4-6"
+[
+  {
+    "name": "claude",
+    "base_url": "https://api.anthropic.com",
+    "model": "claude-opus-4-6",
+    "api_key": "sk-ant-your-key",
+    "protocol": "anthropic"
   },
-  "codex": {
-    "mode": "api",
-    "model": "gpt-4o"
+  {
+    "name": "codex",
+    "base_url": "https://api.openai.com/v1",
+    "model": "gpt-4o",
+    "api_key": "sk-your-key"
   }
-}
+]
 ```
 
-- `api_key` 可以写在这里，或通过环境变量 `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` 传入
-- `base_url` 省略则使用官方默认地址
-- 不创建此文件则维持 CLI 模式，无需任何改动
+有 `claude`/`codex` 条目时自动走 API；没有则 fallback 到 CLI，无需任何改动。
 
 ---
 

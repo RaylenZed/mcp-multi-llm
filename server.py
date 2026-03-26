@@ -3,7 +3,6 @@
 import asyncio
 import atexit
 import logging
-import os
 from fastmcp import FastMCP
 
 from history.store import HistoryStore
@@ -12,7 +11,7 @@ from sessions.claude_session import ClaudeSession
 from sessions.codex_session import CodexSession
 from sessions.openai_compat_session import OpenAICompatSession
 from sessions.anthropic_compat_session import AnthropicCompatSession
-from sessions.provider_config import load_custom_providers, load_builtin_settings
+from sessions.provider_config import load_custom_providers
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -30,48 +29,44 @@ mcp = FastMCP(
 
 history_store = HistoryStore()
 
-# --- Built-in providers: Claude and Codex ---
-# Mode is "cli" by default; set to "api" in ~/.mcp-multi-llm/settings.json to use HTTP API instead.
-_builtin_settings = load_builtin_settings()
 
-_claude_cfg = _builtin_settings.get("claude")
-if _claude_cfg and _claude_cfg.mode == "api":
-    _api_key = _claude_cfg.api_key or os.environ.get("ANTHROPIC_API_KEY", "")
-    claude: BaseSession = AnthropicCompatSession(
+def _session_from_cfg(cfg) -> BaseSession:
+    if cfg.protocol == "anthropic":
+        return AnthropicCompatSession(
+            history_store=history_store,
+            name=cfg.name,
+            base_url=cfg.base_url,
+            model=cfg.model,
+            api_key=cfg.api_key,
+        )
+    return OpenAICompatSession(
         history_store=history_store,
-        name="claude",
-        base_url=_claude_cfg.base_url or "https://api.anthropic.com",
-        model=_claude_cfg.model or "claude-opus-4-6",
-        api_key=_api_key,
+        name=cfg.name,
+        base_url=cfg.base_url,
+        model=cfg.model,
+        api_key=cfg.api_key,
+        extra_body=cfg.extra_body,
     )
-    if not _api_key:
-        claude.available = False
-        logger.warning("[claude] mode=api but ANTHROPIC_API_KEY not set — provider disabled.")
-    logger.info("[claude] mode=api")
-else:
-    claude = ClaudeSession(history_store)
 
-_codex_cfg = _builtin_settings.get("codex")
-if _codex_cfg and _codex_cfg.mode == "api":
-    _api_key = _codex_cfg.api_key or os.environ.get("OPENAI_API_KEY", "")
-    codex: BaseSession = OpenAICompatSession(
-        history_store=history_store,
-        name="codex",
-        base_url=_codex_cfg.base_url or "https://api.openai.com/v1",
-        model=_codex_cfg.model or "gpt-4o",
-        api_key=_api_key,
-    )
-    if not _api_key:
-        codex.available = False
-        logger.warning("[codex] mode=api but OPENAI_API_KEY not set — provider disabled.")
-    logger.info("[codex] mode=api")
-else:
-    codex = CodexSession(history_store)
+
+# --- Load all providers from config ---
+# claude/codex entries in custom_providers.json override the CLI fallback.
+_all_cfgs = load_custom_providers()
+_cfg_by_name = {cfg.name.lower(): cfg for cfg in _all_cfgs}
+_custom_cfgs = [cfg for cfg in _all_cfgs if cfg.name.lower() not in ("claude", "codex")]
+
+claude: BaseSession = (
+    _session_from_cfg(_cfg_by_name["claude"]) if "claude" in _cfg_by_name
+    else ClaudeSession(history_store)
+)
+codex: BaseSession = (
+    _session_from_cfg(_cfg_by_name["codex"]) if "codex" in _cfg_by_name
+    else CodexSession(history_store)
+)
 
 _all_providers: dict[str, BaseSession] = {"claude": claude, "codex": codex}
 
 
-# --- Load custom providers from config ---
 def _make_discuss_tool(session: BaseSession):
     """Create a typed discuss tool function for a custom provider."""
     provider_name = session.provider_name
@@ -90,24 +85,8 @@ def _make_discuss_tool(session: BaseSession):
     return discuss
 
 
-for _cfg in load_custom_providers():
-    if _cfg.protocol == "anthropic":
-        _session = AnthropicCompatSession(
-            history_store=history_store,
-            name=_cfg.name,
-            base_url=_cfg.base_url,
-            model=_cfg.model,
-            api_key=_cfg.api_key,
-        )
-    else:
-        _session = OpenAICompatSession(
-            history_store=history_store,
-            name=_cfg.name,
-            base_url=_cfg.base_url,
-            model=_cfg.model,
-            api_key=_cfg.api_key,
-            extra_body=_cfg.extra_body,
-        )
+for _cfg in _custom_cfgs:
+    _session = _session_from_cfg(_cfg)
     _all_providers[_cfg.name] = _session
     mcp.tool()(_make_discuss_tool(_session))
     logger.info(f"[server] Registered custom provider: {_cfg.name}")

@@ -8,19 +8,9 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-_BUILTIN_NAMES = {"claude", "codex"}
 _VALID_PROTOCOLS = {"openai", "anthropic"}
 _VALID_NAME = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]*$")
 _DEFAULT_CONFIG_PATH = Path.home() / ".mcp-multi-llm" / "custom_providers.json"
-_DEFAULT_SETTINGS_PATH = Path.home() / ".mcp-multi-llm" / "settings.json"
-
-
-@dataclass
-class BuiltinProviderSettings:
-    mode: str = "cli"       # "cli" or "api"
-    api_key: str = ""       # falls back to env var if empty
-    base_url: str = ""      # uses provider default if empty
-    model: str = ""         # uses provider default if empty
 
 
 @dataclass
@@ -82,10 +72,6 @@ def load_custom_providers(path: Path | None = None) -> list[ProviderConfig]:
             logger.warning(f"[provider_config] Entry {i}: name '{name}' is not a valid identifier — skipping")
             continue
 
-        if name.lower() in _BUILTIN_NAMES:
-            logger.warning(f"[provider_config] Entry {i}: name '{name}' conflicts with a built-in provider — skipping")
-            continue
-
         protocol = entry.get("protocol", "openai")
         if protocol not in _VALID_PROTOCOLS:
             logger.warning(
@@ -110,49 +96,3 @@ def load_custom_providers(path: Path | None = None) -> list[ProviderConfig]:
 
     logger.info(f"[provider_config] Loaded {len(providers)} custom provider(s) from {path}")
     return providers
-
-
-def load_builtin_settings(path: Path | None = None) -> dict[str, BuiltinProviderSettings]:
-    """Load CLI-vs-API mode settings for built-in providers (claude, codex).
-
-    Reads ~/.mcp-multi-llm/settings.json. Missing file → all providers default to CLI.
-
-    Example settings.json:
-        {
-          "claude": {"mode": "api", "model": "claude-opus-4-6"},
-          "codex":  {"mode": "cli"}
-        }
-    """
-    if path is None:
-        path = _DEFAULT_SETTINGS_PATH
-
-    if not path.exists():
-        return {}
-
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError) as e:
-        logger.error(f"[provider_config] Failed to read {path}: {e}")
-        return {}
-
-    if not isinstance(raw, dict):
-        logger.error(f"[provider_config] {path} must be a JSON object")
-        return {}
-
-    result: dict[str, BuiltinProviderSettings] = {}
-    for name, cfg in raw.items():
-        if not isinstance(cfg, dict):
-            logger.warning(f"[provider_config] settings '{name}' must be a JSON object — skipping")
-            continue
-        mode = cfg.get("mode", "cli")
-        if mode not in ("cli", "api"):
-            logger.warning(f"[provider_config] settings '{name}': unknown mode '{mode}', defaulting to 'cli'")
-            mode = "cli"
-        result[name] = BuiltinProviderSettings(
-            mode=mode,
-            api_key=cfg.get("api_key", ""),
-            base_url=cfg.get("base_url", ""),
-            model=cfg.get("model", ""),
-        )
-
-    return result
