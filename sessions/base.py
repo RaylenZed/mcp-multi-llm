@@ -1,7 +1,6 @@
-"""Base session manager for LLM CLI providers."""
-
 import asyncio
 import logging
+import os
 import shutil
 from abc import ABC, abstractmethod
 from history.store import HistoryStore, TopicHistory
@@ -9,14 +8,23 @@ from history.store import HistoryStore, TopicHistory
 logger = logging.getLogger(__name__)
 
 
-class CLISession(ABC):
-    """Base class for managing a conversation session with an LLM CLI."""
+class BaseSession(ABC):
+    """Abstract contract for all LLM session providers."""
 
     provider_name: str = "base"
 
     def __init__(self, history_store: HistoryStore):
         self.history_store = history_store
-        self.available = True  # set to False if CLI not found
+        self.available = True
+
+    @abstractmethod
+    async def send(self, message: str, topic: str, timeout: int = 300) -> str:
+        """Send a message and return a response."""
+        ...
+
+
+class CLISession(BaseSession):
+    """Base class for LLM providers that use a CLI subprocess."""
 
     @abstractmethod
     def _build_command(self, message: str, history: TopicHistory) -> list[str]:
@@ -29,7 +37,7 @@ class CLISession(ABC):
         ...
 
     def _get_cli_path(self, name: str) -> str | None:
-        """Find the CLI executable path. Returns None if not found (no crash)."""
+        """Find CLI executable. Returns None and disables provider if not found."""
         path = shutil.which(name)
         if path is None:
             self.available = False
@@ -45,13 +53,14 @@ class CLISession(ABC):
         history.add("user", message)
 
         cmd = self._build_command(message, history)
-        logger.info(f"[{self.provider_name}] Executing: {' '.join(cmd[:3])}...")
+        logger.info(f"[{self.provider_name}] Executing: {' '.join(str(c) for c in cmd[:3])}...")
 
         try:
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                env=os.environ.copy(),  # explicitly pass full environment
             )
             stdout_bytes, stderr_bytes = await asyncio.wait_for(
                 proc.communicate(), timeout=timeout
@@ -59,15 +68,17 @@ class CLISession(ABC):
             stdout = stdout_bytes.decode("utf-8", errors="replace")
             stderr = stderr_bytes.decode("utf-8", errors="replace")
 
+            # Always log stderr so failures are diagnosable
+            if stderr.strip():
+                logger.warning(f"[{self.provider_name}] stderr: {stderr.strip()}")
+
             if proc.returncode != 0:
                 error_msg = f"[{self.provider_name}] Process exited with code {proc.returncode}"
-                if stderr.strip():
-                    error_msg += f"\nstderr: {stderr.strip()}"
                 logger.error(error_msg)
                 if stdout.strip():
                     response = self._parse_output(stdout, stderr)
                 else:
-                    response = f"Error: {error_msg}"
+                    response = f"Error: {error_msg}\nstderr: {stderr.strip()}"
             else:
                 response = self._parse_output(stdout, stderr)
 
