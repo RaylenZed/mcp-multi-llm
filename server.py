@@ -5,6 +5,7 @@ import logging
 from fastmcp import FastMCP
 
 from history.store import HistoryStore
+from sessions.base import BaseSession
 from sessions.claude_session import ClaudeSession
 from sessions.codex_session import CodexSession
 from sessions.gemini_session import GeminiSession
@@ -30,11 +31,11 @@ claude = ClaudeSession(history_store)
 codex = CodexSession(history_store)
 gemini = GeminiSession(history_store)
 
-_all_providers: dict = {"claude": claude, "codex": codex, "gemini": gemini}
+_all_providers: dict[str, BaseSession] = {"claude": claude, "codex": codex, "gemini": gemini}
 
 
 # --- Load custom providers from config ---
-def _make_discuss_tool(session: OpenAICompatSession):
+def _make_discuss_tool(session: BaseSession):
     """Create a typed discuss tool function for a custom provider."""
     provider_name = session.provider_name
 
@@ -42,6 +43,7 @@ def _make_discuss_tool(session: OpenAICompatSession):
         return await session.send(message, topic)
 
     discuss.__name__ = f"discuss_with_{provider_name}"
+    discuss.__qualname__ = f"discuss_with_{provider_name}"
     discuss.__doc__ = (
         f"Discuss with {provider_name}. Maintains conversation context per topic.\n\n"
         f"Args:\n"
@@ -76,7 +78,7 @@ async def list_available_providers() -> str:
         lines.append("Available: " + ", ".join(available))
     if unavailable:
         lines.append("Not installed: " + ", ".join(unavailable) +
-                     " (install their CLI and restart the server)")
+                     " (check installation or configuration and restart the server)")
     return "\n".join(lines) or "No providers available."
 
 
