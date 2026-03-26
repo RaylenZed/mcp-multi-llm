@@ -20,6 +20,10 @@ class APISession(BaseSession):
             timeout=300.0,
         )
 
+    async def aclose(self) -> None:
+        """Close the underlying HTTP client."""
+        await self._client.aclose()
+
     @abstractmethod
     async def send(self, message: str, topic: str, timeout: int = 300) -> str:
         ...

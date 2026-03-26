@@ -1,11 +1,11 @@
+"""Base session manager for LLM CLI providers."""
+
 import asyncio
 import logging
 import os
 import shutil
 from abc import ABC, abstractmethod
 from history.store import HistoryStore, TopicHistory
-
-"""Base session manager for LLM CLI providers."""
 
 logger = logging.getLogger(__name__)
 

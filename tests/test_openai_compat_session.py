@@ -63,7 +63,7 @@ async def test_send_http_error_returns_error_string():
         ))
         mp.setattr(session._client, "post", mock_post)
         result = await session.send("Hi", "test")
-    assert "Error" in result
+    assert "deepseek" in result.lower() or "401" in result
 
 
 @pytest.mark.asyncio
