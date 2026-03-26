@@ -1,6 +1,7 @@
 """MCP Multi-LLM Server — Any agent as host, others as consultants."""
 
 import asyncio
+import atexit
 import logging
 from fastmcp import FastMCP
 
@@ -159,6 +160,21 @@ async def clear_discussion(topic: str, provider: str | None = None) -> str:
     for p in providers:
         history_store.clear_topic(p, topic)
     return f"Cleared discussion '{topic}' for {', '.join(providers)}."
+
+
+def _shutdown_api_sessions():
+    """Close httpx clients for API-based sessions on process exit."""
+    loop = asyncio.new_event_loop()
+    for session in _all_providers.values():
+        if hasattr(session, "aclose"):
+            try:
+                loop.run_until_complete(session.aclose())
+            except Exception:
+                pass
+    loop.close()
+
+
+atexit.register(_shutdown_api_sessions)
 
 
 if __name__ == "__main__":

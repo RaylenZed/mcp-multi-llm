@@ -62,7 +62,7 @@ def load_custom_providers(path: Path | None = None) -> list[ProviderConfig]:
             logger.warning(f"[provider_config] Entry {i}: name '{name}' is not a valid identifier — skipping")
             continue
 
-        if name in _BUILTIN_NAMES:
+        if name.lower() in _BUILTIN_NAMES:
             logger.warning(f"[provider_config] Entry {i}: name '{name}' conflicts with a built-in provider — skipping")
             continue
 

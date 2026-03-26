@@ -50,6 +50,15 @@ def test_builtin_name_is_skipped(tmp_path):
     assert providers == []
 
 
+def test_builtin_name_case_insensitive(tmp_path):
+    """Builtin name check is case-insensitive (e.g., 'Claude' is also rejected)."""
+    cfg_path = write_config(tmp_path, [
+        {"name": "Claude", "base_url": "https://x.com", "model": "m", "api_key": "k"},
+    ])
+    providers = load_custom_providers(cfg_path)
+    assert providers == []
+
+
 def test_missing_required_field_is_skipped(tmp_path):
     """Entries missing required fields are skipped."""
     cfg_path = write_config(tmp_path, [
