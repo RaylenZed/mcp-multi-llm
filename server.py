@@ -3,15 +3,16 @@
 import asyncio
 import atexit
 import logging
+import os
 from fastmcp import FastMCP
 
 from history.store import HistoryStore
 from sessions.base import BaseSession
 from sessions.claude_session import ClaudeSession
 from sessions.codex_session import CodexSession
-from sessions.gemini_session import GeminiSession
 from sessions.openai_compat_session import OpenAICompatSession
-from sessions.provider_config import load_custom_providers
+from sessions.anthropic_compat_session import AnthropicCompatSession
+from sessions.provider_config import load_custom_providers, load_builtin_settings
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -20,7 +21,7 @@ mcp = FastMCP(
     "multi-llm",
     instructions=(
         "Multi-LLM discussion server. Use these tools to consult with "
-        "Claude (Anthropic), Codex (OpenAI), Gemini (Google), and any custom providers "
+        "Claude (Anthropic), Codex (OpenAI), and any custom providers (Gemini, MiniMax, etc.) "
         "for second opinions, code review, architecture discussions, and collaborative "
         "problem-solving. Each conversation is scoped by a 'topic' to maintain context "
         "continuity. Use list_available_providers first to see which consultants are available."
@@ -28,11 +29,46 @@ mcp = FastMCP(
 )
 
 history_store = HistoryStore()
-claude = ClaudeSession(history_store)
-codex = CodexSession(history_store)
-gemini = GeminiSession(history_store)
 
-_all_providers: dict[str, BaseSession] = {"claude": claude, "codex": codex, "gemini": gemini}
+# --- Built-in providers: Claude and Codex ---
+# Mode is "cli" by default; set to "api" in ~/.mcp-multi-llm/settings.json to use HTTP API instead.
+_builtin_settings = load_builtin_settings()
+
+_claude_cfg = _builtin_settings.get("claude")
+if _claude_cfg and _claude_cfg.mode == "api":
+    _api_key = _claude_cfg.api_key or os.environ.get("ANTHROPIC_API_KEY", "")
+    claude: BaseSession = AnthropicCompatSession(
+        history_store=history_store,
+        name="claude",
+        base_url=_claude_cfg.base_url or "https://api.anthropic.com",
+        model=_claude_cfg.model or "claude-opus-4-6",
+        api_key=_api_key,
+    )
+    if not _api_key:
+        claude.available = False
+        logger.warning("[claude] mode=api but ANTHROPIC_API_KEY not set — provider disabled.")
+    logger.info("[claude] mode=api")
+else:
+    claude = ClaudeSession(history_store)
+
+_codex_cfg = _builtin_settings.get("codex")
+if _codex_cfg and _codex_cfg.mode == "api":
+    _api_key = _codex_cfg.api_key or os.environ.get("OPENAI_API_KEY", "")
+    codex: BaseSession = OpenAICompatSession(
+        history_store=history_store,
+        name="codex",
+        base_url=_codex_cfg.base_url or "https://api.openai.com/v1",
+        model=_codex_cfg.model or "gpt-4o",
+        api_key=_api_key,
+    )
+    if not _api_key:
+        codex.available = False
+        logger.warning("[codex] mode=api but OPENAI_API_KEY not set — provider disabled.")
+    logger.info("[codex] mode=api")
+else:
+    codex = CodexSession(history_store)
+
+_all_providers: dict[str, BaseSession] = {"claude": claude, "codex": codex}
 
 
 # --- Load custom providers from config ---
@@ -55,13 +91,23 @@ def _make_discuss_tool(session: BaseSession):
 
 
 for _cfg in load_custom_providers():
-    _session = OpenAICompatSession(
-        history_store=history_store,
-        name=_cfg.name,
-        base_url=_cfg.base_url,
-        model=_cfg.model,
-        api_key=_cfg.api_key,
-    )
+    if _cfg.protocol == "anthropic":
+        _session = AnthropicCompatSession(
+            history_store=history_store,
+            name=_cfg.name,
+            base_url=_cfg.base_url,
+            model=_cfg.model,
+            api_key=_cfg.api_key,
+        )
+    else:
+        _session = OpenAICompatSession(
+            history_store=history_store,
+            name=_cfg.name,
+            base_url=_cfg.base_url,
+            model=_cfg.model,
+            api_key=_cfg.api_key,
+            extra_body=_cfg.extra_body,
+        )
     _all_providers[_cfg.name] = _session
     mcp.tool()(_make_discuss_tool(_session))
     logger.info(f"[server] Registered custom provider: {_cfg.name}")
@@ -85,7 +131,7 @@ async def list_available_providers() -> str:
 
 @mcp.tool()
 async def discuss_with_claude(message: str, topic: str = "general") -> str:
-    """Discuss with Claude (Anthropic Sonnet). Maintains conversation context per topic.
+    """Discuss with Claude (Anthropic). Maintains conversation context per topic.
 
     Args:
         message: What to ask or discuss with Claude.
@@ -106,17 +152,6 @@ async def discuss_with_codex(message: str, topic: str = "general") -> str:
 
 
 @mcp.tool()
-async def discuss_with_gemini(message: str, topic: str = "general") -> str:
-    """Discuss with Gemini (Google). Maintains conversation context per topic.
-
-    Args:
-        message: What to ask or discuss with Gemini.
-        topic: Conversation topic for context continuity (e.g. "auth-refactor", "api-design").
-    """
-    return await gemini.send(message, topic)
-
-
-@mcp.tool()
 async def group_discuss(message: str, topic: str = "general") -> str:
     """Ask all available LLMs the same question in parallel. Skips providers not installed.
 
@@ -126,7 +161,7 @@ async def group_discuss(message: str, topic: str = "general") -> str:
     """
     active = {name: s for name, s in _all_providers.items() if s.available}
     if not active:
-        return "No providers available. Install at least one CLI (claude, codex, gemini) or add custom providers."
+        return "No providers available. Install at least one CLI (claude, codex) or add custom providers."
 
     tasks = {name: s.send(message, topic) for name, s in active.items()}
     results = await asyncio.gather(*tasks.values(), return_exceptions=True)

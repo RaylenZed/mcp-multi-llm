@@ -32,7 +32,6 @@ class ClaudeSession(CLISession):
             "--model", self.model,
             "--no-session-persistence",
             "--permission-mode", "bypassPermissions",
-            "--bare",
         ]
 
     def _parse_output(self, stdout: str, stderr: str) -> str:
